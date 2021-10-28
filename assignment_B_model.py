@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
+from sklearn.metrics import mean_squared_error
 
-#%% logistic model
 def logistic(x, start, K, x_peak, r):
     """
     Logistic model
@@ -66,9 +66,23 @@ def calibration(x, y):
                         y[slope.index(max(slope))+1]])/2)
         start = max(y) - K
     
+    if start <0:
+        start = 0
+        
     # curve fitting
     popt, _ = curve_fit(logistic, x, y, p0 = [start, K, x_peak, 0], maxfev = 10000,
                         bounds = ([0.5*start, 0.5*K, 1995, -10],
                                   [2*(start+0.001), 2*K, 2030, 10]))
     # +0.001 so that upper bound always larger than lower bound even if start=0
     return popt
+
+#%%
+def nmrse(y_true, y_simulated):
+    rmse=mean_squared_error(y_true, y_simulated)
+    avg_y_true = sum(y_true)/len(y_true)
+    nrmse = rmse/avg_y_true
+    return nmrse
+    
+    
+    
+    

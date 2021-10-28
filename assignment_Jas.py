@@ -4,14 +4,18 @@ Created on Thu Sep 23 14:46:32 2021
 
 @author: patta
 """
+#%%
 # imports 
 import numpy as np
 import pandas as pd
 import os
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.model_selection import KFold
+from assignment_B_model import logistic, calibration, nmrse
 
-# # check path
+# check path
 os.chdir(r"C:\Users\patta\Sustainability Analysis in Python\Assignment\Sustainability-Analysis-in-Python")
 print("Current Working Directory " , os.getcwd())
 
@@ -28,8 +32,7 @@ df_female = df.loc[df["Sex"]=="FEMALE"]
 df_final = df_female.loc[df_female["Age"]=="15-24"]
 
 #country list
-countries = df_final['GeoAreaName'].to_list()
-unique_countries = pd.unique(countries)
+unique_countries = pd.unique(df_final['GeoAreaName'].to_list())
 
 #%% sanity checks for each country
 for country in unique_countries:
@@ -37,84 +40,12 @@ for country in unique_countries:
     minimum=subset['Value'].min()
     maximum=subset['Value'].max()
     avg=subset['Value'].mean()
-    print(country," : ", 
-          'The minimum value is', minimum,
-          'The maximum value is', maximum,
-          'The average value is', avg)
+    # print(country," : ", 
+    #       'The minimum value is', minimum,
+    #       'The maximum value is', maximum,
+    #       'The average value is', avg)
     
 #%% main analysis
-def logistic(x, start, K, x_peak, r):
-    """
-    Logistic model
-    
-    This function runs a logistic model.
-    
-    Args:
-        x (array_like): The control variable as a sequence of numeric values \
-        in a list or a numpy array.
-        start (float): The initial value of the return variable.
-        K (float): The carrying capacity.
-        x_peak (float): The x-value with the steepest growth.
-        r (float): The growth rate.
-        
-    Returns:
-        array_like: A numpy array or a single floating-point number with \
-        the return variable.
-    """
-    
-    if isinstance(x, list):
-        x = np.array(x)
-    return start + K / (1 + np.exp(r * (x_peak-x)))
-
-def calibration(x, y):
-    """
-    Calibration
-    
-    This function calibrates a logistic model.
-    The logistic model can have a positive or negative growth.
-    
-    Args:
-        x (array_like): The explanatory variable as a sequence of numeric values \
-        in a list or a numpy array.
-        y (array_like): The response variable as a sequence of numeric values \
-        in a list or a numpy array.
-        
-    Returns:
-        tuple: A tuple including four values: 1) the initial value (start), \
-        2) the carrying capacity (K), 3) the x-value with the steepest growth \
-        (x_peak), and 4) the growth rate (r).
-    """
-    if isinstance(x, pd.Series): x = x.to_numpy(dtype='int')
-    if isinstance(y, pd.Series): y = y.to_numpy(dtype='float')
-    
-    if len(np.unique(y)) == 1:
-        return y[0], 0, 2000.0, 0
-    
-    # initial parameter guesses
-    slope = [None] * (len(x) - 1)
-    for i in range(len(slope)):
-        slope[i] = (y[i+1] - y[i]) / (x[i+1] - x[i])
-        slope[i] = abs(slope[i])
-    x_peak = x[slope.index(max(slope))] + 0.5
-    
-    if y[0] < y[-1]: # positive growth
-        start = min(y)
-        K = 2 * (sum([y[slope.index(max(slope))], \
-                        y[slope.index(max(slope))+1]])/2 - start)
-    else: # negative growth
-        K = 2 * (max(y) - sum([y[slope.index(max(slope))], \
-                        y[slope.index(max(slope))+1]])/2)
-        start = max(y) - K
-    
-    if start <0:
-        start = 0
-        
-    # curve fitting
-    popt, _ = curve_fit(logistic, x, y, p0 = [start, K, x_peak, 0], maxfev = 10000,
-                        bounds = ([0.5*start, 0.5*K, 1995, -10],
-                                  [2*(start+0.001), 2*K, 2030, 10]))
-    # +0.001 so that upper bound always larger than lower bound even if start=0
-    return popt
 
 # Using calibration and logistic functions
 popt_list=[]
@@ -128,11 +59,8 @@ for country in unique_countries:
     popt_list.append(temp_popt)
     log_list = logistic(year,temp_popt[0],temp_popt[1],temp_popt[2],temp_popt[3])
     logistic_values.append(log_list)
-    
-    
-#%% Evaluate the model using R2
-from sklearn.metrics import r2_score, mean_squared_error
 
+# Evaluate the model using R2
 y_true = df_final['Value'].to_list()
 
 # unpack the y_pred values from the log function with a nested for loop
@@ -150,9 +78,9 @@ rmse=mean_squared_error(y_true, y_pred)
 avg_y_true = sum(y_true)/len(y_true)
 nrmse = rmse/avg_y_true
 
-#%%PBIAS
+#PBIAS
 #create new df to seperate by country
-data ={'Countries':countries, 'Years':df_final['TimePeriod'],  'Y_true':y_true,'Y_pred':y_pred}
+data ={'Countries':df_final['GeoAreaName'], 'Years':df_final['TimePeriod'],  'Y_true':y_true,'Y_pred':y_pred}
 pbias_df = pd.DataFrame(data)
 # pbias_df=pbias_df.groupby(Countries)      #this doesnt work
 
@@ -161,25 +89,134 @@ for country in unique_countries:
     subset = pbias_df[pbias_df['Countries'] == country]
     y_true_1 = subset['Y_true']
     y_pred_1 = subset['Y_pred']
-    y_true_1= np.array(y_true_1)
-    y_pred_1=np.array(y_pred_1)
+    y_true_1 = np.array(y_true_1)
+    y_pred_1 = np.array(y_pred_1)
     pbias = 100* ((sum(y_pred_1-y_true_1))/sum(y_pred_1))
     pbias_values.append(pbias)
 
-#%% 
-import numpy as np
-from sklearn.model_selection import KFold
-X = np.array([[1, 2], [3, 4], [1, 2], [3, 4]])
-y = np.array([1, 2, 3, 4])
-kf = KFold(n_splits=2)
-kf.get_n_splits(X)
+#%% Validate using 5-fold cross validation
 
-print(kf)
+# logistic validation
+validated_data=pd.DataFrame(data=unique_countries, columns=['Country'])
+calibration_results=[]
+x_test=[]
 
-for train_index, test_index in kf.split(X):
-print("TRAIN:", train_index, "TEST:", test_index)
-X_train, X_test = X[train_index], X[test_index]
-y_train, y_test = y[train_index], y[test_index]
+for location in range(len(unique_countries)):
+    country=unique_countries[location]
+    data=df_final[:][df_final.GeoAreaName==country]
+    x=data.TimePeriod.to_numpy()
+    y=data.Value.to_numpy()
+    kf_5 = KFold(n_splits=min(5, len(y)))   # takes the minimum for when there are less than 5 data points
+    for train_index, test_index in kf_5.split(x):
+          X_train, X_test = x[train_index], x[test_index]
+          y_train, y_test = y[train_index], y[test_index]
+    calibration_results.append(calibration(X_train, y_train))
+    x_test.append(X_test)
+    
+validated_data=pd.concat([validated_data, pd.DataFrame(calibration_results)], axis=1)
+validated_data.columns =['Country','start','K', 'x_peak', 'r']
+
+y_simulated=np.array([])
+country_log=np.array([])
+for location in range(len(unique_countries)):
+    country=unique_countries[location]
+    x_data=x_test[location]
+    K = validated_data['K'].loc[validated_data['Country']==country]
+    r= validated_data['r'].loc[validated_data['Country']==country]
+    s=validated_data['start'].loc[validated_data['Country']==country]
+    x_p=validated_data['x_peak'].loc[validated_data['Country']==country]
+    for x_point in x_data:
+        y_simulated=np.append(y_simulated,logistic(x_point,s,K,x_p,r))
+        country_log=np.append(country_log,country)
+
+data_sim = {'Country':country_log,  'Simulationed Y': y_simulated}
+logistic_validation  = pd.DataFrame(data=data_sim)
+
+#%%Calculating the R2 per country
+r2=[]
+pair=[]
+observed=[]
+
+for location in range(len(unique_countries)):
+    country=unique_countries[location]
+    years=x_test[location]
+    for year in years:
+        pair.append(np.where((df_final['GeoAreaName']==country)
+                            &(df_final['TimePeriod']==year)))
+    for pair in pair:
+        observed.append(df_final.Value.iloc[pair].values)
+    simulated=logistic_validation['Simulationed Y'][logistic_validation['Country']==country].tolist()
+    r2.append(mean_squared_error(observed, simulated))
+    observed=[]
+    pair=[]
+
+# calculate nrmse 
+for location in range(len(unique_countries)):
+    country=unique_countries[location]
+    years=x_test[location]
+    for year in years:
+        list_.append(np.where((df_final['Value']==country)
+                            &(df_final['TimePeriod']==year)))
+
+nrmse_df_validation = logistic_validation
+nrmse_df_validation['Real Y'] = 
+nmrse_validation=[]
+
+# for country in unique_countries:
+#     subset = df_final[df_final['Countries'] == country]
+#     country=unique_countries[location]
+
+        
+
+
+#%%
+'wrong'
+# X = np.array(pbias_df['Years'])
+# y = np.array(pbias_df['Y_true'])
+# kf5 = KFold(n_splits=5)
+# kf10 = KFold(n_splits=10)
+# kf5.get_n_splits(X)
+
+# # use X_testing data for calibration and logistic model - ytest= values and x=test years  
+
+# logistic_validation = []
+
+# for train_index, test_index in kf5.split(X):
+#     X_train, X_test = X[train_index], X[test_index]
+#     y_train, y_test = y[train_index], y[test_index] 
+#     ctest_validation = calibration(X_test,y_test)
+#     logtest_validation = logistic(y_test,ctest_validation[0],ctest_validation[1],ctest_validation[2],
+#                     ctest_validation[3])
+#     logistic_validation.append(logtest_validation)
+
+
+
+
+
+    #%%
+# data ={'X test':X_test, 'Y test':y_test}
+# test_df = pd.DataFrame(data)
+
+# # run the test values through the calibration and logistic model
+# ctest_validation = calibration(X_test,y_test)
+# logtest_validation = logistic(y_test,ctest_validation[0],ctest_validation[1],ctest_validation[2],
+#                     ctest_validation[3])
+
+# # run the train values through the calibration and logistic model
+# ctrain_validation = calibration(X_train,y_train)
+# logtrain_validation = logistic(X_train,ctest_validation[0],ctest_validation[1],ctest_validation[2],
+#                     ctest_validation[3])
+# # for item in test_df.T.iteritems():
+
+    
+#%% validation with R2
+r2_validation_train = r2_score(X_train, y_train)
+r2_validation_test = r2_score(X_test, y_test)
+
+# validation with NRMSE
+rmse=mean_squared_error(X_train, y_train)
+avg_y_true = sum(X_train)/len(X_train)
+nrmse_validation = rmse/avg_y_true
 
 #%% Button
 
