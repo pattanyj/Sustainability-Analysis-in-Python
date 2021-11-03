@@ -3,21 +3,29 @@
 Created on Thu Sep 23 14:46:32 2021
 
 @author: patta
+
+NOTES TO SELF:
+    1. combine analysis for the task 4 steps r2,nmrse,pbias
+    2. try to work out the next part similarly
+    
 """
 #%%
+# check path 
+'DELETE BEFORE SUBMISSION!!!!!!!'
+import os
+os.chdir(r"C:\Users\patta\Sustainability Analysis in Python\Assignment\Sustainability-Analysis-in-Python")
+# print("Current Working Directory " , os.getcwd())
+
 # imports 
 import numpy as np
 import pandas as pd
-import os
 import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
 from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.model_selection import KFold
-from assignment_B_model import logistic, calibration, nmrse
+from assignment_B_model import logistic, calibration, nrmse, pbias, warn
+import seaborn as sns
+import warnings
 
-# check path
-os.chdir(r"C:\Users\patta\Sustainability Analysis in Python\Assignment\Sustainability-Analysis-in-Python")
-print("Current Working Directory " , os.getcwd())
 
 # read data
 df = pd.read_csv('Goal1.csv')
@@ -68,103 +76,180 @@ y_pred = []
 for value in logistic_values:
     for item in value:
         y_pred.append(item)
- 
-#calculate r2
-r2_value = r2_score(y_true, y_pred)
 
+y_values_df = pd.DataFrame({'Country': df_final['GeoAreaName'], 'Y_true': df_final['Value'], 'Y_predicted': y_pred})
+
+#R2
+r2_values=[]
 #NRMSE
-#calculate RMSE
-rmse=mean_squared_error(y_true, y_pred)
-avg_y_true = sum(y_true)/len(y_true)
-nrmse = rmse/avg_y_true
-
+nrmse_values=[]
 #PBIAS
-#create new df to seperate by country
-data ={'Countries':df_final['GeoAreaName'], 'Years':df_final['TimePeriod'],  'Y_true':y_true,'Y_pred':y_pred}
-pbias_df = pd.DataFrame(data)
-# pbias_df=pbias_df.groupby(Countries)      #this doesnt work
-
 pbias_values=[]
+#remove warnings from console
+warnings.warn = warn
+
 for country in unique_countries:
-    subset = pbias_df[pbias_df['Countries'] == country]
-    y_true_1 = subset['Y_true']
-    y_pred_1 = subset['Y_pred']
-    y_true_1 = np.array(y_true_1)
-    y_pred_1 = np.array(y_pred_1)
-    pbias = 100* ((sum(y_pred_1-y_true_1))/sum(y_pred_1))
-    pbias_values.append(pbias)
-
-#%% Validate using 5-fold cross validation
-
-# logistic validation
-validated_data=pd.DataFrame(data=unique_countries, columns=['Country'])
-calibration_results=[]
-x_test=[]
-
-for location in range(len(unique_countries)):
-    country=unique_countries[location]
-    data=df_final[:][df_final.GeoAreaName==country]
-    x=data.TimePeriod.to_numpy()
-    y=data.Value.to_numpy()
-    kf_5 = KFold(n_splits=min(5, len(y)))   # takes the minimum for when there are less than 5 data points
-    for train_index, test_index in kf_5.split(x):
-          X_train, X_test = x[train_index], x[test_index]
-          y_train, y_test = y[train_index], y[test_index]
-    calibration_results.append(calibration(X_train, y_train))
-    x_test.append(X_test)
+    subset = df_final[df_final['GeoAreaName'] == country]
+    y_true = subset['Value'].to_list()
+    subset2 = y_values_df[y_values_df['Country'] == country]
+    y_predicted = subset2['Y_predicted'].to_list()
     
-validated_data=pd.concat([validated_data, pd.DataFrame(calibration_results)], axis=1)
-validated_data.columns =['Country','start','K', 'x_peak', 'r']
+    #R2
+    r2_value = r2_score(y_true, y_predicted)
+    r2_values.append(r2_value)
+    
+    #nrmse
+    nrmse_value = nrmse(y_true, y_predicted)
+    nrmse_values.append(nrmse_value)
+    
+    #PBIAS
+    pbias_value = pbias(y_true,y_predicted)
+    pbias_values.append(pbias_value)
 
-y_simulated=np.array([])
-country_log=np.array([])
-for location in range(len(unique_countries)):
-    country=unique_countries[location]
-    x_data=x_test[location]
-    K = validated_data['K'].loc[validated_data['Country']==country]
-    r= validated_data['r'].loc[validated_data['Country']==country]
-    s=validated_data['start'].loc[validated_data['Country']==country]
-    x_p=validated_data['x_peak'].loc[validated_data['Country']==country]
-    for x_point in x_data:
-        y_simulated=np.append(y_simulated,logistic(x_point,s,K,x_p,r))
-        country_log=np.append(country_log,country)
+evaluation_df = pd.DataFrame({'Countries': unique_countries, 'r2': r2_values, 'nrmse': nrmse_values, 'pbias': pbias_values})
+# evaluation_df.to_csv(r'Evaluation.csv')
 
-data_sim = {'Country':country_log,  'Simulationed Y': y_simulated}
-logistic_validation  = pd.DataFrame(data=data_sim)
+# Validate using 5-fold cross validation
+simulated_values = []
+#R2
+r2_validation=[]
+#NRMSE
+nrmse_validation=[]
+#PBIAS
+pbias_validation=[]
 
-#%%Calculating the R2 per country
-r2=[]
-pair=[]
-observed=[]
+k_value = 5 #change this value
 
-for location in range(len(unique_countries)):
-    country=unique_countries[location]
-    years=x_test[location]
-    for year in years:
-        pair.append(np.where((df_final['GeoAreaName']==country)
-                            &(df_final['TimePeriod']==year)))
-    for pair in pair:
-        observed.append(df_final.Value.iloc[pair].values)
-    simulated=logistic_validation['Simulationed Y'][logistic_validation['Country']==country].tolist()
-    r2.append(mean_squared_error(observed, simulated))
-    observed=[]
-    pair=[]
+for country in unique_countries:
+    subset = df_final[df_final['GeoAreaName'] == country]
+    x = subset['TimePeriod'].to_numpy()
+    y = subset['Value'].to_numpy()
+    kf = KFold(n_splits=min(k_value, len(y)))   # takes the minimum for when there are less than k_value data points
+    
+    r2_country=[]
+    nrmse_country=[]
+    pbias_country=[]
+    
+    for train_index, test_index in kf.split(x):
+        X_train, X_test = x[train_index], x[test_index]
+        y_train, y_test = y[train_index], y[test_index]
+   
+        observed = subset['Value'][subset['TimePeriod'].isin(X_test)]
+    
+        # calibration
+        temp_popt = calibration(X_train, y_train)
+        
+        # logistic 
+        simulated = logistic(X_test,temp_popt[0],temp_popt[1],temp_popt[2],temp_popt[3])
+        simulated_values.append(simulated)
+        
+        #r2
+        r2_value = r2_score(observed, simulated)
+        r2_country.append(r2_value)
+        
+        #nrmse
+        nrmse_value = nrmse(observed, simulated)
+        nrmse_country.append(nrmse_value)
+        
+        #PBIAS
+        pbias_value = pbias(observed, simulated)
+        pbias_country.append(pbias_value)    
+    
+    r2_validation.append(np.array(r2_country).mean())
+    nrmse_validation.append(np.array(nrmse_country).mean())
+    pbias_validation.append(np.array(pbias_country).mean())
+    
+         
+validated_data  = pd.DataFrame({'Country': unique_countries, 'r2_validation': r2_validation, 'nrmse_validation': nrmse_validation,'pbias_validation': pbias_validation })
 
-# calculate nrmse 
-for location in range(len(unique_countries)):
-    country=unique_countries[location]
-    years=x_test[location]
-    for year in years:
-        list_.append(np.where((df_final['Value']==country)
-                            &(df_final['TimePeriod']==year)))
+#%%
+# Select two contrasting countries and display their observed development 
+# and simulated trend in one common time series plot 
 
-nrmse_df_validation = logistic_validation
-nrmse_df_validation['Real Y'] = 
-nmrse_validation=[]
+#Colombia data
+colombia_observed = df_final['Value'][df_final['GeoAreaName'] =='Colombia']
 
-# for country in unique_countries:
-#     subset = df_final[df_final['Countries'] == country]
-#     country=unique_countries[location]
+
+
+
+
+
+
+#%%
+#Observed variables
+colombia_observed = df_final['Value'][df_final['GeoAreaName'] =='Colombia']
+# colombia_years = df_final['TimePeriod'][df_final['GeoAreaName']=='Colombia'].tolist()
+
+kenya_observed = df_final['Value'][df_final['GeoAreaName']=='Kenya'].tolist()
+# kenya_years = df_final['TimePeriod'][df_final['GeoAreaName']=='Kenya'].tolist()
+
+#Variables Colombia
+
+country='Colombia'
+K_c= validated_data['K'].loc[validated_data['Country']==country].tolist()
+r_c= validated_data['r'].loc[validated_data['Country']==country].tolist()
+s_c=validated_data.start.loc[validated_data['Country']==country].tolist()
+x_c=validated_data.x_peak.loc[validated_data['Country']==country].tolist()
+
+#Variables Kenya
+country='Kenya'
+K_k= validated_data['K'].loc[validated_data['Country']==country].tolist()
+r_k= validated_data['r'].loc[validated_data['Country']==country].tolist()
+s_k=validated_data.start.loc[validated_data['Country']==country].tolist()
+x_k=validated_data.x_peak.loc[validated_data['Country']==country].tolist()
+
+#Timeperiod
+t_pred=np.arange(2000,2030)
+# t_obs=np.arange(2000,2021)
+
+#Predicted variables
+Colombia_pred_df=pd.DataFrame()
+Colombia_pred_df['time']=t_pred
+Colombia_pred_df['Predicted']=logistic(t_pred, s_c, K_c,x_c,r_c)
+Colombia_pred = logistic(t_pred, s_c, K_c,x_c,r_c)
+Kenya_pred=logistic(t_pred, s_k, K_k,x_k,r_k)
+
+# %%Plotting the data of Colombia
+fig= plt.figure(figsize = (16,9)) # figure size in 16:9 ratio
+fig = sns.set(style="darkgrid")
+# create scatter plot
+# fig=sns.scatterplot(x = 'time', y='Predicted', data = Colombia_pred_df, facecolor="blue",
+#                     edgecolor= 'blue', linewidth = 0.2)
+
+fig=sns.scatterplot(x = t_pred, y=Colombia_pred, facecolor="red",edgecolor= 'red', linewidth = 3)
+fig=sns.scatterplot(x = colombia_years, y = colombia_observed, facecolor="blue", edgecolor= 'blue', linewidth = 3)  
+
+plt.xlabel("Time", fontsize = 20) # x-axis label
+plt.xlim(2000, 2030)
+plt.ylabel('Employed population below international poverty line, by sex and age (%)', fontsize = 16) # y-axis label
+# plt.ylim(250,260)
+plt.tick_params(labelsize = 14)
+plt.legend(labels=["Simulated","Observed"],fontsize = 'xx-large')
+# save generated scatter plot at program location
+plt.savefig("Colombia.png") 
+plt.show() # show scatter plot
+plt.close()
+
+#%%Plotting the data of KENYA
+fig= plt.figure(figsize = (16,9)) # figure size in 16:9 ratio
+fig= sns.set(style="darkgrid") 
+
+# create scatter plot
+fig=sns.scatterplot(x = t_pred, y=Kenya_pred, facecolor="red",edgecolor= 'red', linewidth = 3)
+fig=sns.scatterplot(x = kenya_years, y = kenya_observed, facecolor="blue",edgecolor= 'blue', linewidth = 3) 
+
+plt.xlabel("Time", fontsize = 20) # x-axis label
+plt.xlim(2000, 2030)
+plt.ylabel('Employed population below international poverty line, by sex and age (%)', fontsize = 16) # y-axis label
+# plt.ylim(100,700)
+plt.tick_params(labelsize = 14)
+plt.legend(labels=["Simulated","Observed"],fontsize = 'xx-large')
+plt.savefig("Kenya.png") # save generated scatter plot at program location
+plt.close()
+
+
+
+
 
         
 
@@ -208,6 +293,7 @@ nmrse_validation=[]
 #                     ctest_validation[3])
 # # for item in test_df.T.iteritems():
 
+    
     
 #%% validation with R2
 r2_validation_train = r2_score(X_train, y_train)

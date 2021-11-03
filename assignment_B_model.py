@@ -76,13 +76,64 @@ def calibration(x, y):
     # +0.001 so that upper bound always larger than lower bound even if start=0
     return popt
 
-#%%
-def nmrse(y_true, y_simulated):
-    rmse=mean_squared_error(y_true, y_simulated)
-    avg_y_true = sum(y_true)/len(y_true)
-    nrmse = rmse/avg_y_true
-    return nmrse
+def nrmse(observed_values,simulated_values):
+    """
+    Normal Root Mean Squared (nmrse)
     
+    This function calculated the normal root mean squared value.
+    The nmrse model is a measure of the mean relative scatter and reflects the random errors.
+    
+    Args:
+        observed_values (array_like): The actual values which were collected from the data \
+        in a list or a numpy array.
+        simulated_values (array_like): The simulated values which were collected from the logistic function \
+        in a list or a numpy array.
+        
+    Returns:
+        float:  a float value containing the nrmse.
+    """
+    rmse=mean_squared_error(observed_values, simulated_values)
+    avg_y_true = sum(observed_values)/len(observed_values)
+    
+    if avg_y_true == 0:
+        nrmse = np.nan
+    else:
+        nrmse = rmse/avg_y_true
+    
+    return nrmse
+
+def pbias(observed_values,simulated_values):
+    """
+    Percent bias (pbias)
+    
+    This function calculated the percent bias.
+    The pbias measures the average tendency of the simulated values to be larger or 
+    smaller than their observed ones.
+    
+    Args:
+        observed_values (array_like): The actual values which were collected from the data \
+        in a list or a numpy array.
+        simulated_values (array_like): The simulated values which were collected from the logistic function \
+        in a list or a numpy array.
+        
+    Returns:
+        float:  a float value containing the pbias.
+    """
+    
+    if sum(np.array(simulated_values)) == 0:
+        pbias = np.nan
+    else:
+        pbias = 100 * ((sum(np.array(simulated_values)-np.array(observed_values)))/sum(np.array(simulated_values)))
+
+    return pbias
+
+def warn(*args, **kwargs):
+    pass
+
+
+
+
+
     
     
     
