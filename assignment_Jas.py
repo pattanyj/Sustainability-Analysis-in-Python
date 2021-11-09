@@ -3,10 +3,6 @@
 Created on Thu Sep 23 14:46:32 2021
 
 @author: patta
-
-NOTES TO SELF:
-    1. combine analysis for the task 4 steps r2,nmrse,pbias
-    2. try to work out the next part similarly
     
 """
 #%%
@@ -20,7 +16,7 @@ os.chdir(r"C:\Users\patta\Sustainability Analysis in Python\Assignment\Sustainab
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.metrics import r2_score
 from sklearn.model_selection import KFold
 from assignment_B_model import logistic, calibration, nrmse, pbias, warn
 import seaborn as sns
@@ -30,9 +26,70 @@ import warnings
 # read data
 df = pd.read_csv('Goal1.csv')
 
+#%% Button
+
+# 'Still working on this, it runs but not connected to code'
+
+# import sys
+# from PyQt5.QtWidgets import (QLabel, QRadioButton, QPushButton, QVBoxLayout, QApplication, QWidget)
+
+
+# class basicRadiobuttonExample(QWidget):
+    
+#     global k_value 
+    
+#     def __init__(self):
+#         super().__init__()
+
+#         self.init_ui()
+
+#     def init_ui(self):
+#         self.label = QLabel('Select the cross-validation method')
+#         self.rbtn1 = QRadioButton('5-fold cross validation')
+#         self.rbtn2 = QRadioButton('10-fold cross validation')
+#         self.label2 = QLabel("")
+        
+#         # self.rbtn1.toggled.connect(self.onClicked)
+#         # self.rbtn2.toggled.connect(self.onClicked)
+
+#         layout = QVBoxLayout()
+#         layout.addWidget(self.label)
+#         layout.addWidget(self.rbtn1)
+#         layout.addWidget(self.rbtn2)
+#         layout.addWidget(self.label2)
+        
+#         self.setGeometry(600, 600,900, 50)
+#         # self.setFont(QFont('Arial', 10)
+#         self.setLayout(layout)
+#         self.setWindowTitle('Input Needed')
+
+#         # this will activate the window
+#         self.activateWindow()        
+
+#         self.show()
+    
+#     def dispK(self):
+#         k_value=5
+#         if self.rbtn1.isChecked()==True:
+#             k_value=5
+#         if self.rbtn1==True:
+#             k_value=10
+#         self.ui.labelFare.setText("Your selected k value is: "+str(k_value), 
+#                                   ". Please allow a moment for the analysis to run.")
+             
+#     def onClicked(self):
+#         radioBtn = self.sender()
+#         if radioBtn.isChecked():
+#             self.label2.setText("You live in " + radioBtn.text())
+
+
+# if __name__ == '__main__':    
+#     app = QApplication(sys.argv)
+#     ex = basicRadiobuttonExample()
+#     sys.exit(app.exec_())
 #%% filter the data
 # drop nan columns
-df = df.drop(['Goal','Target','GeoAreaCode','Source','Nature','Reporting Type','TimeCoverage','UpperBound', 'LowerBound','BasePeriod','GeoInfoUrl','FootNote'], axis=1)
+df = df.drop(['Goal','Target','Source','Nature','Reporting Type','TimeCoverage','UpperBound', 'LowerBound','BasePeriod','GeoInfoUrl','FootNote'], axis=1)
 df = df[df.columns.drop(list(df.filter(regex='Unnamed')))]
 
 # focusing on women between 15-24 only 
@@ -41,6 +98,8 @@ df_final = df_female.loc[df_female["Age"]=="15-24"]
 
 #country list
 unique_countries = pd.unique(df_final['GeoAreaName'].to_list())
+#country code list
+unique_codes = np.unique(df_final['GeoAreaCode']) 
 
 #%% sanity checks for each country
 for country in unique_countries:
@@ -56,8 +115,13 @@ for country in unique_countries:
 #%% main analysis
 
 # Using calibration and logistic functions
+# list to collect logistic values and calibration output
 popt_list=[]
 logistic_values=[]
+
+# creating 2030 data
+popt_2030 = []
+logistic_2030 = []
 
 for country in unique_countries:
     subset = df_final[df_final['GeoAreaName'] == country]
@@ -67,9 +131,13 @@ for country in unique_countries:
     popt_list.append(temp_popt)
     log_list = logistic(year,temp_popt[0],temp_popt[1],temp_popt[2],temp_popt[3])
     logistic_values.append(log_list)
+    
+    #log values for 2030
+    log2030 = logistic(2030,temp_popt[0],temp_popt[1],temp_popt[2],temp_popt[3])
+    logistic_2030.append(log2030)
 
-# Evaluate the model using R2
-y_true = df_final['Value'].to_list()
+#create a df with the 2030 logistic values
+# validated_data  = pd.DataFrame ({'Country':unique_countries, 'Country_codes': unique_codes, '2030_projected_value':logistic_2030})   
 
 # unpack the y_pred values from the log function with a nested for loop
 y_pred = []
@@ -106,10 +174,9 @@ for country in unique_countries:
     pbias_value = pbias(y_true,y_predicted)
     pbias_values.append(pbias_value)
 
-evaluation_df = pd.DataFrame({'Countries': unique_countries, 'r2': r2_values, 'nrmse': nrmse_values, 'pbias': pbias_values})
-# evaluation_df.to_csv(r'Evaluation.csv')
+# evaluation_df = pd.DataFrame({'Countries': unique_countries, 'r2': r2_values, 'nrmse': nrmse_values, 'pbias': pbias_values})
 
-# Validate using 5-fold cross validation
+#%% Validate using 5-fold cross validation
 simulated_values = []
 #R2
 r2_validation=[]
@@ -133,7 +200,7 @@ for country in unique_countries:
     for train_index, test_index in kf.split(x):
         X_train, X_test = x[train_index], x[test_index]
         y_train, y_test = y[train_index], y[test_index]
-   
+        
         observed = subset['Value'][subset['TimePeriod'].isin(X_test)]
     
         # calibration
@@ -158,197 +225,102 @@ for country in unique_countries:
     r2_validation.append(np.array(r2_country).mean())
     nrmse_validation.append(np.array(nrmse_country).mean())
     pbias_validation.append(np.array(pbias_country).mean())
-    
-         
-validated_data  = pd.DataFrame({'Country': unique_countries, 'r2_validation': r2_validation, 'nrmse_validation': nrmse_validation,'pbias_validation': pbias_validation })
+
+#Storing          
+# validated_data  = pd.DataFrame({'Country': unique_countries, 'r2_validation': r2_validation, 'nrmse_validation': nrmse_validation,'pbias_validation': pbias_validation })
+calibration_data = pd.DataFrame({'Country': unique_countries, 'country_code': unique_codes, 'Calib_info': popt_list})
+split_df = pd.DataFrame(calibration_data['Calib_info'].to_list(), columns = ['x_start', 'K', 'x_peak', 'r'])
+calibration_df = pd.concat([calibration_data, split_df], axis=1)
+calibration_df = calibration_df.drop('Calib_info', axis=1)
+
+#%%creating a csv to export all data
+indicator111_df = pd.DataFrame({'Country': unique_countries, 'Growth_rate': calibration_df['r'], 'Values_2030': logistic_2030, 'r2_evaluation': r2_values, 'nrmse_evaluation': nrmse_values, 'pbias_evaluation': pbias_values, 'r2_validation': r2_validation, 'nrmse_validation': nrmse_validation,'pbias_validation': pbias_validation})
+indicator111_df.insert(0,'Indicator', '1.1.1') # write indicator
+indicator111_df.insert(1,'Description', 'Employed population below international poverty line, by sex and age (%)') # write indicator description
+
+indicator111_df.to_csv(r'Indicator111_information.csv')
 
 #%%
 # Select two contrasting countries and display their observed development 
 # and simulated trend in one common time series plot 
 
 #Colombia data
-colombia_observed = df_final['Value'][df_final['GeoAreaName'] =='Colombia']
+country = 'Colombia'
 
+colombia_observed = df_final['Value'][df_final['GeoAreaName'] == country]
+colombia_value = calibration_df[calibration_df['Country'] == country]
+year_colombia = df_final['TimePeriod'][df_final['GeoAreaName'] == country]
+# year_colombia = np.arange(2000,2030)
+colombia_simulated = logistic(year_colombia, colombia_value['x_start'].to_list(),colombia_value['K'].to_list(), colombia_value['x_peak'].to_list(),colombia_value['r'].to_list())
 
+#Kenya data
+country = 'Kenya'
+kenya_observed = df_final['Value'][df_final['GeoAreaName'] == country]
+kenya_value = calibration_df[calibration_df['Country'] == country]
+year_kenya = df_final['TimePeriod'][df_final['GeoAreaName'] == country]
+# year_kenya = np.arange(2000,2030)
+kenya_simulated = logistic(year_kenya, kenya_value['x_start'].to_list(),kenya_value['K'].to_list(), kenya_value['x_peak'].to_list(),kenya_value['r'].to_list())
 
+#%% plotting data
+fig= plt.figure(figsize = (20,12)) #creating fig and fig size
+fig = sns.set_style("ticks")
 
+# plot colombia data
+fig=sns.scatterplot(x = year_colombia, y = colombia_observed, facecolor="blue", edgecolor= 'blue', linewidth = 5)  
+fig=sns.lineplot(x = year_colombia, y=colombia_simulated, palette='deepskyblue', linewidth = 5)
 
-
-
-#%%
-#Observed variables
-colombia_observed = df_final['Value'][df_final['GeoAreaName'] =='Colombia']
-# colombia_years = df_final['TimePeriod'][df_final['GeoAreaName']=='Colombia'].tolist()
-
-kenya_observed = df_final['Value'][df_final['GeoAreaName']=='Kenya'].tolist()
-# kenya_years = df_final['TimePeriod'][df_final['GeoAreaName']=='Kenya'].tolist()
-
-#Variables Colombia
-
-country='Colombia'
-K_c= validated_data['K'].loc[validated_data['Country']==country].tolist()
-r_c= validated_data['r'].loc[validated_data['Country']==country].tolist()
-s_c=validated_data.start.loc[validated_data['Country']==country].tolist()
-x_c=validated_data.x_peak.loc[validated_data['Country']==country].tolist()
-
-#Variables Kenya
-country='Kenya'
-K_k= validated_data['K'].loc[validated_data['Country']==country].tolist()
-r_k= validated_data['r'].loc[validated_data['Country']==country].tolist()
-s_k=validated_data.start.loc[validated_data['Country']==country].tolist()
-x_k=validated_data.x_peak.loc[validated_data['Country']==country].tolist()
-
-#Timeperiod
-t_pred=np.arange(2000,2030)
-# t_obs=np.arange(2000,2021)
-
-#Predicted variables
-Colombia_pred_df=pd.DataFrame()
-Colombia_pred_df['time']=t_pred
-Colombia_pred_df['Predicted']=logistic(t_pred, s_c, K_c,x_c,r_c)
-Colombia_pred = logistic(t_pred, s_c, K_c,x_c,r_c)
-Kenya_pred=logistic(t_pred, s_k, K_k,x_k,r_k)
-
-# %%Plotting the data of Colombia
-fig= plt.figure(figsize = (16,9)) # figure size in 16:9 ratio
-fig = sns.set(style="darkgrid")
-# create scatter plot
-# fig=sns.scatterplot(x = 'time', y='Predicted', data = Colombia_pred_df, facecolor="blue",
-#                     edgecolor= 'blue', linewidth = 0.2)
-
-fig=sns.scatterplot(x = t_pred, y=Colombia_pred, facecolor="red",edgecolor= 'red', linewidth = 3)
-fig=sns.scatterplot(x = colombia_years, y = colombia_observed, facecolor="blue", edgecolor= 'blue', linewidth = 3)  
+# plot kenya data
+fig=sns.scatterplot(x = year_kenya, y = kenya_observed, facecolor="orangered", edgecolor= 'orangered', linewidth = 5)  
+fig=sns.lineplot(x = year_kenya, y=kenya_simulated, palette='red', linewidth = 5)
 
 plt.xlabel("Time", fontsize = 20) # x-axis label
-plt.xlim(2000, 2030)
-plt.ylabel('Employed population below international poverty line, by sex and age (%)', fontsize = 16) # y-axis label
-# plt.ylim(250,260)
-plt.tick_params(labelsize = 14)
-plt.legend(labels=["Simulated","Observed"],fontsize = 'xx-large')
-# save generated scatter plot at program location
-plt.savefig("Colombia.png") 
-plt.show() # show scatter plot
+plt.xticks(np.arange(2000,2019,1)) # formatting the x-axis
+plt.tick_params(labelsize = 18) # size of the axis
+plt.ylabel('Employed population below international poverty line, by sex and age (%)', fontsize = 20) # y-axis label
+plt.ylim(bottom = 0)
+plt.legend(labels=["Simulated Colombia","Simulated Kenya","Observed Colombia","Observed Kenya"],fontsize = 'xx-large')  # set the legend
+
+plt.savefig("scatterplot_%_women_15to24_below_international_poverty_line_2000-2018_Colombia_Kenya.png", bbox_inches = 'tight',dpi =300) # save plot
 plt.close()
 
-#%%Plotting the data of KENYA
-fig= plt.figure(figsize = (16,9)) # figure size in 16:9 ratio
-fig= sns.set(style="darkgrid") 
+#%% Task 5 - Plotting most populous 30 countries
 
-# create scatter plot
-fig=sns.scatterplot(x = t_pred, y=Kenya_pred, facecolor="red",edgecolor= 'red', linewidth = 3)
-fig=sns.scatterplot(x = kenya_years, y = kenya_observed, facecolor="blue",edgecolor= 'blue', linewidth = 3) 
+# UN population data 
+women_population = pd.read_excel('WPP2019_POP_F01_3_TOTAL_POPULATION_FEMALE.xlsx', skiprows=16,usecols= ["Region, subregion, country or area *", "Country code","Type", "2020"])
+women_population=women_population[women_population['Type'] == 'Country/Area']   #filtering data to collect countries
 
-plt.xlabel("Time", fontsize = 20) # x-axis label
-plt.xlim(2000, 2030)
-plt.ylabel('Employed population below international poverty line, by sex and age (%)', fontsize = 16) # y-axis label
-# plt.ylim(100,700)
-plt.tick_params(labelsize = 14)
-plt.legend(labels=["Simulated","Observed"],fontsize = 'xx-large')
-plt.savefig("Kenya.png") # save generated scatter plot at program location
-plt.close()
+# order UN data based on descending population
+descending_values = women_population.sort_values('2020', ascending=False)
+descending_values['country_code'] = descending_values["Country code"]   # prepare data to drop information
+descending_values = descending_values.drop(columns=["Country code"])
 
+joined_df = descending_values.set_index('country_code').join(calibration_df.set_index('country_code'))  #join the df togther
+top30 = joined_df.dropna()  #drop countries which are not in SDG data
+top30 = top30[:30]  #take the top 30
+top30 = top30.sort_values('r') # order the values by lowest to highest growth rate 
 
 
+#plot
+fig= plt.figure(figsize = (20,12)) #creating fig and fig size
+fig, ax = plt.subplots(1)  
+fig = sns.set_style("ticks")
 
+plt.scatter(x = top30['r'], 
+                          y = top30['Country'], 
+                          c = top30['r'],
+                          cmap= 'jet')
 
-        
+ax.set_xlabel('Growth rate', fontsize = 12)
+ax.set_ylabel('Countries', fontsize = 12)
 
+plt.grid(alpha=0.3)
 
-#%%
-'wrong'
-# X = np.array(pbias_df['Years'])
-# y = np.array(pbias_df['Y_true'])
-# kf5 = KFold(n_splits=5)
-# kf10 = KFold(n_splits=10)
-# kf5.get_n_splits(X)
+plt.colorbar().set_label('Projected Indicator Growth', fontsize = 12)
+plt.setp(ax.get_yticklabels(), fontsize='7.5') 
 
-# # use X_testing data for calibration and logistic model - ytest= values and x=test years  
+plt.savefig("TOP30_scatterplot_%_women_15to24_below_international_poverty_line_growth_rate.png", bbox_inches = 'tight',dpi = 300) # save plot
+plt.close()     
 
-# logistic_validation = []
-
-# for train_index, test_index in kf5.split(X):
-#     X_train, X_test = X[train_index], X[test_index]
-#     y_train, y_test = y[train_index], y[test_index] 
-#     ctest_validation = calibration(X_test,y_test)
-#     logtest_validation = logistic(y_test,ctest_validation[0],ctest_validation[1],ctest_validation[2],
-#                     ctest_validation[3])
-#     logistic_validation.append(logtest_validation)
-
-
-
-
-
-    #%%
-# data ={'X test':X_test, 'Y test':y_test}
-# test_df = pd.DataFrame(data)
-
-# # run the test values through the calibration and logistic model
-# ctest_validation = calibration(X_test,y_test)
-# logtest_validation = logistic(y_test,ctest_validation[0],ctest_validation[1],ctest_validation[2],
-#                     ctest_validation[3])
-
-# # run the train values through the calibration and logistic model
-# ctrain_validation = calibration(X_train,y_train)
-# logtrain_validation = logistic(X_train,ctest_validation[0],ctest_validation[1],ctest_validation[2],
-#                     ctest_validation[3])
-# # for item in test_df.T.iteritems():
 
     
-    
-#%% validation with R2
-r2_validation_train = r2_score(X_train, y_train)
-r2_validation_test = r2_score(X_test, y_test)
 
-# validation with NRMSE
-rmse=mean_squared_error(X_train, y_train)
-avg_y_true = sum(X_train)/len(X_train)
-nrmse_validation = rmse/avg_y_true
-
-#%% Button
-
-'Still working on this, it runs but not connected to code'
-
-import sys
-from PyQt5.QtWidgets import (QLabel, QRadioButton, QPushButton, QVBoxLayout, QApplication, QWidget)
-
-
-class basicRadiobuttonExample(QWidget):
-
-    def __init__(self):
-        super().__init__()
-
-        self.init_ui()
-
-    def init_ui(self):
-        self.label = QLabel('Select the cross-validation method')
-        self.rbtn1 = QRadioButton('5-fold cross validation')
-        self.rbtn2 = QRadioButton('10-fold cross validation')
-        self.label2 = QLabel("")
-        
-        # self.rbtn1.toggled.connect(self.onClicked)
-        # self.rbtn2.toggled.connect(self.onClicked)
-
-        layout = QVBoxLayout()
-        layout.addWidget(self.label)
-        layout.addWidget(self.rbtn1)
-        layout.addWidget(self.rbtn2)
-        layout.addWidget(self.label2)
-        
-        self.setGeometry(600, 600,900, 50)
-        # self.setFont(QFont('Arial', 10)
-        self.setLayout(layout)
-        self.setWindowTitle('Input Needed')
-        
-
-        self.show()
-
-    # def onClicked(self):
-    #     radioBtn = self.sender()
-    #     if radioBtn.isChecked():
-    #         self.label2.setText("You live in " + radioBtn.text())
-
-
-if __name__ == '__main__':    
-    app = QApplication(sys.argv)
-    ex = basicRadiobuttonExample()
-    sys.exit(app.exec_())

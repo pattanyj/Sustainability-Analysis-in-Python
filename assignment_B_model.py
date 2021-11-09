@@ -128,8 +128,22 @@ def pbias(observed_values,simulated_values):
     return pbias
 
 def warn(*args, **kwargs):
+    """
+    Removing warnings
+    
+    This function allows for warnings not to be present.
+    The warnings from running the code are not printing onthe console.
+    
+    Args:
+        args (*args): Argument is not passed \
+        not applicable.
+        kwargs (**kwargs): Argument is not passed \
+        not applicable.
+        
+    Returns:
+        float:  a float value containing the pbias.
+    """
     pass
-
 
 
 

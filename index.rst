@@ -8,6 +8,9 @@ Welcome to conf.py's documentation!
 
 .. toctree::
    :maxdepth: 2
+   :caption: Contents:
+   
+   getting_started.rst
 
 api
 
